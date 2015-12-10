@@ -1,1 +1,1 @@
-# AVR/Arduino Touch Sensor Library
+# AVR/Arduino Capacitive Touch and Proximity Sensing Library
