@@ -43,9 +43,18 @@ struct PortF {
   static volatile uint8_t& DDR;
 };
 
+/**
+ * Extends AdcPinInput class to provide a base template declaration for
+ * pin-specific template specialization.
+ * The various specializations can be treated as singletons and
+ * accessed via the static instance() method defined by each.
+ */
 template<int MUX_INDEX> class TAdcPinInput : public AdcPinInput {
 };
 
+/**
+ * Template specialization for pin 0.
+ */
 template<> class TAdcPinInput<0> : public AdcPinInput {
 public:
 
@@ -60,6 +69,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -83,6 +95,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -106,6 +121,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -128,6 +146,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -152,6 +173,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -175,6 +199,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -198,6 +225,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -221,6 +251,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -244,6 +277,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }
@@ -267,6 +303,9 @@ public:
 
   Pin& pin() { return m_pin; }
 
+  /**
+   * Returns singleton instance of this specialization of the TAdcPinInput template.
+   */
   static TAdcPinInput& instance() {
     return s_singleton;
   }

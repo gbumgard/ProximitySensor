@@ -12,20 +12,43 @@
 #include <TAdcPinInput.h>
 
 /**
- * 
+ * A class representing a single capacitive proximity sensor.
+ * Each sensor requires two dedicated ADC inputs for operation.
+ * One pin is attached to an electrode or antenna that will act as
+ * one plate of a virtual capacitor. The second pin is used as a
+ * reference and must be left unconnected.
  */
-class ProxmitySensor {
+class ProximitySensor {
 
 public:
 
   enum State { IDLE, PROXIMITY, TOUCH };
 
-  ProxmitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin);
+  /**
+   * Constructs a ProximitySensor instance. The constructor accepts
+   * two parameters that describe the pins that will be used to
+   * provide the sensing functionality (see class description).
+   * Pin-specific specializations of the TAdcPinInput template
+   * class are used for these parameters, e.g.:
+   *
+   *   ProximitySensor(
+   *       &TAdcPinInput<11>::instance(),
+   *       &TAdcPinInput<12>::instance()
+   *   )
+   */
+  ProximitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin);
 
   /**
    * Configures and enables ADC.
    */
   static void begin();
+
+  /**
+   * Updates the current sensor state. This method is called to
+   * capture samples, update the moving average and trigger
+   * state transitions. Typically called from the main application loop.
+   */
+  uint32_t update();
 
   /**
    * The on-sample callback function signature.
@@ -36,7 +59,7 @@ public:
    * Registers an optional callback function that will be invoked
    * after each ADC sample is read. The callback may be used to
    * perform other operations while samples are averaged within
-   * the update() call.
+   * the main update() call.
    */
   void setOnSampleCallback(OnSampleCallback cb, void* data) {
     m_onSampleCallback = cb;
@@ -80,122 +103,218 @@ public:
    * must not be set such that the filter cannot respond to
    * slowly changing environmental conditions.
    */
-  uint8_t setMovingAverageAdaptationRate(const uint8_t adaptationRate) {
-    return m_movingAverageAdaptationRate = adaptationRate;
+  uint8_t setFilterAdaptationRate(const uint8_t adaptationRate) {
+    return m_filterAdaptationRate = adaptationRate;
   }
 
   /**
    * Gets the moving average adaptation rate setting.
    */
-  uint8_t getMovingAverageAdaptationRate() const {
-    return m_movingAverageAdaptationRate;
+  uint8_t getFilterAdaptationRate() const {
+    return m_filterAdaptationRate;
   }
 
   /**
-   * Sets the moving average reseed threshold. This
-   * value defines a threshold below the current moving average
-   * at which a sample will cause the moving average to be
+   * Sets the moving average filter reseed threshold. This
+   * value defines a threshold relative to the current moving average
+   * value at which a sample will cause the moving average to be
    * immediately changed to match the value of that sample.
    * The threshold parameter is treated as the enumerator in
    * a fractional value with a fixed denominator of 256 - a value of
    * 1 specifies a threshold of 1/256 (.0039 or 0.39%).
    */
-  uint8_t setMovingAverageReseedThreshold(const uint8_t threshold) {
-    return m_movingAverageReseedThreshold = threshold;
+  uint8_t setFilterReseedThreshold(const uint8_t threshold) {
+    return m_filterReseedThreshold = threshold;
   }
 
   /**
-   * Gets the moving average reseed threshold setting.
+   * Gets the moving average filter reseed threshold setting.
    */
-  uint8_t getMovingAverageReseedThreshold() const {
-    return m_movingAverageReseedThreshold;
+  uint8_t getFilterReseedThreshold() const {
+    return m_filterReseedThreshold;
   }
 
+  /**
+   * Sets the threshold at which the sensor will enter the PROXIMITY
+   * state. The threshold is defined as a percentage of the current
+   * moving average. The parameter is treated as the enumerator in
+   * a fractional value with a fixed denominator of 256 - a value of
+   * 1 specifies a threshold of 1/256 (.0039 or 0.39%). The first sample
+   * with a value greater than (moving_average + moving_average*threshold)
+   * will trigger entry into the Proximity state.
+   */
   uint8_t setProximityThreshold(const uint8_t& threshold) {
     return m_proximityThreshold = threshold;
   }
 
+  /**
+   * Gets the current proximity threshold setting.
+   */
   uint8_t getProximityThreshold() const {
     return m_proximityThreshold;
   }
 
+  /**
+   * Sets the threshold at which the sensor will enter the TOUCH
+   * state. The threshold is defined as a percentage of the value at
+   * which the sensor entered the Proximity state.
+   * The parameter is treated as the enumerator in a fractional value
+   * with a fixed denominator of 256 - a value of 1 specifies a
+   * threshold of 1/256 (.0039 or 0.39%). The first sample with a value
+   * greater than  (proximity_value + proximity_value*threshold)
+   * will trigger entry into the Touch state.
+   */
   uint8_t setTouchThreshold(const uint8_t& threshold) {
     return m_touchThreshold = threshold;
   }
 
+  /**
+   * Gets the current touch threshold setting.
+   */
   uint8_t getTouchThreshold() const {
     return m_touchThreshold;
   }
 
+  /**
+   * Sets the threshold at which the sensor will exit the TOUCH
+   * state. The threshold is defined as a percentage relative to
+   * the value at which the sensor entered the touch state.
+   * The parameter is treated as the enumerator in a fractional value
+   * with a fixed denominator of 256 - a value of 1 specifies a
+   * threshold of 1/256 (.0039 or 0.39%). The first sample with a
+   * value less than (touch_value - threshold_value * touch) will trigger an
+   * exit from the Touch state.
+   */
   uint8_t setReleaseThreshold(const uint8_t& threshold) {
     return m_releaseThreshold = threshold;
   }
 
+  /**
+   * Gets the current release threshold setting.
+   */
   uint8_t getReleaseThreshold() const {
     return m_releaseThreshold;
   }
 
-  uint32_t setDebounceDelayMs(const uint32_t milliseconds) {
+  /**
+   * Sets a time that must pass with after the sensor begins
+   * receiving samples greater than the proximity threshold before
+   * entering the PROXIMITY state. This delay is used to "debounce"
+   * the incoming samples to prevent several state changes as samples
+   * near the proximity threshold.
+   */
+  uint32_t setDelayMs(const uint32_t milliseconds) {
     return m_delayMs = milliseconds;
   }
 
+  /**
+   * Gets the current delay time setting.
+   */
   uint32_t getDelayMs() const {
     return m_delayMs;
   }
 
+  /**
+   * Returns the time since the sensor entered into the
+   * temporary delay state.
+   */
   uint32_t getDelayStartTimeMs() const {
     return m_delayStartTimeMs;
   }
 
+  /**
+   * Sets the maximum amount of time that the sensor will be
+   * allowed reside in the PROXIMITY state. A timeout should be used
+   * if significant, persistent changes in the capacitive field
+   * environment may occur while the sensor is active.
+   */
   uint32_t setProximityTimeoutMs(const uint32_t& milliseconds) {
     return m_proximityTimeoutMs = milliseconds;
   }
 
+  /**
+   * Gets the current proximity timeout setting.
+   */
   uint32_t getProximityTimeoutMs() const {
     return m_proximityTimeoutMs;
   }
 
-  uint32_t setTouchTimeoutMs(const uint32_t& milliseconds) {
+  /**
+   * Sets the maximum amount of time that the sensor will be
+   * allowed reside in the TOUCH state. A timeout should be used
+   * if significant, persistent changes in the capacitive field
+   * environment may occur while the sensor is active.
+   */
+ uint32_t setTouchTimeoutMs(const uint32_t& milliseconds) {
     return m_touchTimeoutMs = milliseconds;
   }
 
+ /**
+  * Gets the current touch timeout setting.
+  */
   uint32_t getTouchTimeoutMs() const {
     return m_touchTimeoutMs;
   }
 
-  uint32_t getLta() const {
-    return m_lta;
+  /**
+   * Gets the moving average of incoming samples produced by
+   * the internal IIR filter.
+   */
+  uint32_t getMovingAverage() const {
+    return m_movingAverage;
   }
 
+  /**
+   * Gets the current state of the sensor.
+   */
   State getState() const {
     return m_state;
   }
 
+  /**
+   * Indicates whether the sensor is in the PROXIMITY or TOUCH state.
+   */
   bool inProximity() const {
     return m_state == PROXIMITY || m_state == TOUCH;
   }
 
+  /**
+   * Indicates whether the sensor is in the TOUCH state.
+   */
   bool inTouch() const {
     return m_state == TOUCH;
   }
 
+  /**
+   * Returns the number of milliseconds during which the sensor
+   * has currently resided in the IDLE state.
+   */
   uint32_t getIdleDurationMs() const;
 
+  /**
+   * Returns the number of milliseconds during which the sensor
+   * has currently resided in the PROXIMITY state.
+   */
   uint32_t getProximityDurationMs() const;
 
+  /**
+   * Returns the number of milliseconds during which the sensor
+   * has currently resided in the TOUCH state.
+   */
   uint32_t getTouchDurationMs() const;
 
+  /**
+   * Forces a reset of the internal IIR moving average filter.
+   */
   void reseed() {
     m_reseed = true;
   }
-
-  uint32_t update();
 
 protected:
 
   uint32_t update(uint32_t sample);
 
-  uint32_t updateLta(uint32_t sample);
+  uint32_t updateMovingAverage(uint32_t sample);
 
   static uint16_t getAdcSample();
 
@@ -206,9 +325,9 @@ private:
 
   uint8_t m_resolution;
 
-  uint8_t m_movingAverageAdaptationRate;
+  uint8_t m_filterAdaptationRate;
 
-  uint8_t m_movingAverageReseedThreshold;
+  uint8_t m_filterReseedThreshold;
 
   uint32_t m_idleStartTimeMs;
 
@@ -227,7 +346,7 @@ private:
   uint32_t m_delayMs;
   uint32_t m_delayStartTimeMs;
 
-  uint32_t m_lta;
+  uint32_t m_movingAverage;
 
   State m_state;
 

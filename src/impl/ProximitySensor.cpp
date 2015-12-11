@@ -1,5 +1,5 @@
 /*
- * TSIChannel.cpp
+ * ProximitySensor.cpp
  *
  *  Created on: Sep 29, 2014
  *      Author: gbumgard
@@ -16,17 +16,17 @@
 #include <Arduino.h>
 #endif
 
-#define DEFAULT_LTA_ADAPTATION_RATE 4
-#define DEFAULT_LTA_RESEED_THRESHOLD 32
+#define DEFAULT_FILTER_ADAPTATION_RATE 4
+#define DEFAULT_FILTER_RESEED_THRESHOLD 32
 
-#define DEFAULT_PROXIMITY_THRESHOLD 10
-#define DEFAULT_TOUCH_THRESHOLD 64
+#define DEFAULT_PROXIMITY_THRESHOLD 32
+#define DEFAULT_TOUCH_THRESHOLD 32
 #define DEFAULT_RELEASE_THRESHOLD 8
 
 #define DEFAULT_PROXIMITY_TIMEOUT_MS 10000
 #define DEFAULT_TOUCH_TIMEOUT_MS 10000
-#define DEFAULT_DEBOUNCE_DELAY_MS 20
-#define DEFAULT_RESOLUTION 6
+#define DEFAULT_DELAY_MS 20
+#define DEFAULT_RESOLUTION 7
 
 /**
  * Function that selects compile-time generated delays required for randomization of capacitive charging cycle.
@@ -63,12 +63,12 @@ static void random_delay() {
   }
 }
 
-ProxmitySensor::ProxmitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin )
+ProximitySensor::ProximitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin )
 : m_pReferencePin(pReferencePin)
 , m_pSensorPin(pSensorPin)
-, m_resolution(0)
-, m_movingAverageAdaptationRate(DEFAULT_LTA_ADAPTATION_RATE)
-, m_movingAverageReseedThreshold(DEFAULT_LTA_RESEED_THRESHOLD)
+, m_resolution(DEFAULT_RESOLUTION)
+, m_filterAdaptationRate(DEFAULT_FILTER_ADAPTATION_RATE)
+, m_filterReseedThreshold(DEFAULT_FILTER_RESEED_THRESHOLD)
 , m_idleStartTimeMs(millis())
 , m_proximityThreshold(DEFAULT_PROXIMITY_THRESHOLD)
 , m_proximityTimeoutMs(DEFAULT_PROXIMITY_TIMEOUT_MS)
@@ -77,9 +77,9 @@ ProxmitySensor::ProxmitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorP
 , m_touchTimeoutMs(DEFAULT_TOUCH_TIMEOUT_MS)
 , m_touchStartTimeMs(0)
 , m_releaseThreshold(DEFAULT_RELEASE_THRESHOLD)
-, m_delayMs(DEFAULT_DEBOUNCE_DELAY_MS)
+, m_delayMs(DEFAULT_DELAY_MS)
 , m_delayStartTimeMs(0)
-, m_lta(0)
+, m_movingAverage(0)
 , m_state(IDLE)
 , m_reseed(true)
 , m_reseedSampleCount(0)
@@ -88,7 +88,7 @@ ProxmitySensor::ProxmitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorP
 {
 }
 
-void ProxmitySensor::begin() {
+void ProximitySensor::begin() {
   // Configure ADC as required for proximity sensing
   // Set AVCC reference to 5V
   ADMUX = (1<<REFS0);
@@ -98,7 +98,7 @@ void ProxmitySensor::begin() {
   ADCSRA |= (1<<ADEN);
 }
 
-uint32_t ProxmitySensor::update() {
+uint32_t ProximitySensor::update() {
 
   size_t sampleCount = _BV(m_resolution);
 
@@ -158,34 +158,34 @@ uint32_t ProxmitySensor::update() {
   return update((total / sampleCount) << 10);
 }
 
-uint32_t ProxmitySensor::updateLta(uint32_t sample) {
-  return m_lta = (int32_t)m_lta + (((int32_t)m_movingAverageAdaptationRate*((int32_t)sample - (int32_t)m_lta)) >> 8);
+uint32_t ProximitySensor::updateMovingAverage(uint32_t sample) {
+  return m_movingAverage = (int32_t)m_movingAverage + (((int32_t)m_filterAdaptationRate*((int32_t)sample - (int32_t)m_movingAverage)) >> 8);
 }
 
-uint32_t ProxmitySensor::getIdleDurationMs() const {
+uint32_t ProximitySensor::getIdleDurationMs() const {
   return m_state == TOUCH || m_state == PROXIMITY ? 0 : millis() - m_idleStartTimeMs;
 }
 
-uint32_t ProxmitySensor::getProximityDurationMs() const {
+uint32_t ProximitySensor::getProximityDurationMs() const {
   return m_state == TOUCH || m_state == PROXIMITY ? millis() - m_proximityStartTimeMs : 0;
 }
 
-uint32_t ProxmitySensor::getTouchDurationMs() const {
+uint32_t ProximitySensor::getTouchDurationMs() const {
   return m_state == TOUCH ? millis() - m_touchStartTimeMs : 0;
 }
 
-uint32_t ProxmitySensor::update(uint32_t sample) {
+uint32_t ProximitySensor::update(uint32_t sample) {
 
   if (m_reseed == true) {
-    m_lta = sample;
+    m_movingAverage = sample;
     m_reseed = false;
     return sample;
   }
 
-  uint32_t reseedThreshold = m_lta - ((m_movingAverageReseedThreshold * m_lta) >> 8);
-  uint32_t proximityThreshold = m_lta + ((m_proximityThreshold * m_lta) >> 8);
-  uint32_t touchThreshold = proximityThreshold + ((m_touchThreshold * m_lta) >> 8);
-  uint32_t releaseThreshold = touchThreshold - ((m_releaseThreshold * m_lta) >> 8);
+  uint32_t reseedThreshold = m_movingAverage - ((m_filterReseedThreshold * m_movingAverage) >> 8);
+  uint32_t proximityThreshold = m_movingAverage + ((m_proximityThreshold * m_movingAverage) >> 8);
+  uint32_t touchThreshold = proximityThreshold + ((m_touchThreshold * m_movingAverage) >> 8);
+  uint32_t releaseThreshold = touchThreshold - ((m_releaseThreshold * m_movingAverage) >> 8);
 
   if (m_state == IDLE) {
     if (sample > proximityThreshold) {
@@ -200,11 +200,11 @@ uint32_t ProxmitySensor::update(uint32_t sample) {
     }
     else if (sample < reseedThreshold) {
       m_delayStartTimeMs = 0;
-      m_lta = sample;
+      m_movingAverage = sample;
     }
     else {
       m_delayStartTimeMs = 0;
-      updateLta(sample);
+      updateMovingAverage(sample);
     }
   }
 
@@ -216,12 +216,12 @@ uint32_t ProxmitySensor::update(uint32_t sample) {
     else if (sample < proximityThreshold) {
       m_state = IDLE;
       m_idleStartTimeMs = millis();
-      updateLta(sample);
+      updateMovingAverage(sample);
     }
     else if ((m_proximityTimeoutMs > 0 && millis() - m_proximityStartTimeMs) > m_proximityTimeoutMs) {
       m_state = IDLE;
       m_idleStartTimeMs = millis();
-      m_lta = sample;
+      m_movingAverage = sample;
     }
   }
 
@@ -234,20 +234,20 @@ uint32_t ProxmitySensor::update(uint32_t sample) {
       else {
         m_state = IDLE;
         m_idleStartTimeMs = millis();
-        updateLta(sample);
+        updateMovingAverage(sample);
       }
     }
     else if (m_touchTimeoutMs > 0 && millis() - m_touchStartTimeMs > m_touchTimeoutMs) {
       m_state = IDLE;
       m_idleStartTimeMs = millis();
-      m_lta = sample;
+      m_movingAverage = sample;
     }
   }
 
   return sample;
 }
 
-uint16_t ProxmitySensor::getAdcSample() {
+uint16_t ProximitySensor::getAdcSample() {
 
   // Start conversion
   ADCSRA |= (1<<ADSC);
