@@ -8,10 +8,10 @@
 #ifndef ADCPININPUT_H_
 #define ADCPININPUT_H_
 
-#include "Pin.h"
-#include "AdcPinInput.h"
-
+#include <stdint.h>
 #include <avr/pgmspace.h>
+#include <impl/AdcPinInput.h>
+#include <impl/Pin.h>
 
 struct PortB {
   static volatile uint8_t& PORT;

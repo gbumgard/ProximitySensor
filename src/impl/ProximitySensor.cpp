@@ -5,10 +5,28 @@
  *      Author: gbumgard
  */
 
-#include "TouchSensor.h"
-#include <avr/interrupt.h>
-#include <util/delay.h>
 #include <stdlib.h>
+#include <avr/interrupt.h>
+#include <ProximitySensor.h>
+#include <util/delay.h>
+
+#ifdef AVR_PROJECT_BUILD
+#include "timer.h"
+#else
+#include <Arduino.h>
+#endif
+
+#define DEFAULT_LTA_ADAPTATION_RATE 4
+#define DEFAULT_LTA_RESEED_THRESHOLD 32
+
+#define DEFAULT_PROXIMITY_THRESHOLD 10
+#define DEFAULT_TOUCH_THRESHOLD 64
+#define DEFAULT_RELEASE_THRESHOLD 8
+
+#define DEFAULT_PROXIMITY_TIMEOUT_MS 10000
+#define DEFAULT_TOUCH_TIMEOUT_MS 10000
+#define DEFAULT_DEBOUNCE_DELAY_MS 20
+#define DEFAULT_RESOLUTION 6
 
 /**
  * Function that selects compile-time generated delays required for randomization of capacitive charging cycle.
@@ -45,13 +63,12 @@ static void random_delay() {
   }
 }
 
-TouchSensor::TouchSensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin )
+ProxmitySensor::ProxmitySensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin )
 : m_pReferencePin(pReferencePin)
 , m_pSensorPin(pSensorPin)
-, m_gain(0)
-, m_scale(0)
-, m_ltaAdaptationRate(DEFAULT_LTA_ADAPTATION_RATE)
-, m_ltaReseedThreshold(DEFAULT_LTA_RESEED_THRESHOLD)
+, m_resolution(0)
+, m_movingAverageAdaptationRate(DEFAULT_LTA_ADAPTATION_RATE)
+, m_movingAverageReseedThreshold(DEFAULT_LTA_RESEED_THRESHOLD)
 , m_idleStartTimeMs(millis())
 , m_proximityThreshold(DEFAULT_PROXIMITY_THRESHOLD)
 , m_proximityTimeoutMs(DEFAULT_PROXIMITY_TIMEOUT_MS)
@@ -60,8 +77,8 @@ TouchSensor::TouchSensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin )
 , m_touchTimeoutMs(DEFAULT_TOUCH_TIMEOUT_MS)
 , m_touchStartTimeMs(0)
 , m_releaseThreshold(DEFAULT_RELEASE_THRESHOLD)
-, m_debounceDelayMs(DEFAULT_DEBOUNCE_DELAY_MS)
-, m_debounceStartTimeMs(0)
+, m_delayMs(DEFAULT_DEBOUNCE_DELAY_MS)
+, m_delayStartTimeMs(0)
 , m_lta(0)
 , m_state(IDLE)
 , m_reseed(true)
@@ -71,14 +88,21 @@ TouchSensor::TouchSensor(AdcPinInput* pReferencePin, AdcPinInput* pSensorPin )
 {
 }
 
-uint32_t TouchSensor::update() {
+void ProxmitySensor::begin() {
+  // Configure ADC as required for proximity sensing
+  // Set AVCC reference to 5V
+  ADMUX = (1<<REFS0);
+  // Set Prescaler to 128 -> clock 16MHz/128 = 125kHz
+  ADCSRA |= _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+  // Enable the ADC
+  ADCSRA |= (1<<ADEN);
+}
 
-  uint8_t gain = m_gain;
-  uint8_t scale = m_scale;
+uint32_t ProxmitySensor::update() {
 
-  size_t sampleCount = _BV(gain);
+  size_t sampleCount = _BV(m_resolution);
 
-  uint32_t value = 0;
+  uint32_t total = 0;
 
   for (size_t i=0; i < sampleCount; i++) {
 
@@ -126,16 +150,31 @@ uint32_t TouchSensor::update() {
 
     sei();
 
-    value += (charged-discharged);
+    total += (charged-discharged);
 
     if (m_onSampleCallback) (*m_onSampleCallback)(m_onSampleCallbackData);
   }
 
-  return update((value >> scale) << (14 - gain + scale));
+  return update((total / sampleCount) << 10);
 }
 
+uint32_t ProxmitySensor::updateLta(uint32_t sample) {
+  return m_lta = (int32_t)m_lta + (((int32_t)m_movingAverageAdaptationRate*((int32_t)sample - (int32_t)m_lta)) >> 8);
+}
 
-uint32_t TouchSensor::update(uint32_t sample) {
+uint32_t ProxmitySensor::getIdleDurationMs() const {
+  return m_state == TOUCH || m_state == PROXIMITY ? 0 : millis() - m_idleStartTimeMs;
+}
+
+uint32_t ProxmitySensor::getProximityDurationMs() const {
+  return m_state == TOUCH || m_state == PROXIMITY ? millis() - m_proximityStartTimeMs : 0;
+}
+
+uint32_t ProxmitySensor::getTouchDurationMs() const {
+  return m_state == TOUCH ? millis() - m_touchStartTimeMs : 0;
+}
+
+uint32_t ProxmitySensor::update(uint32_t sample) {
 
   if (m_reseed == true) {
     m_lta = sample;
@@ -143,29 +182,29 @@ uint32_t TouchSensor::update(uint32_t sample) {
     return sample;
   }
 
-  uint32_t reseedThreshold = m_lta - getLtaFraction(m_ltaReseedThreshold);
-  uint32_t proximityThreshold = m_lta + getLtaFraction(m_proximityThreshold);
-  uint32_t touchThreshold = proximityThreshold + getLtaFraction(m_touchThreshold);
-  uint32_t releaseThreshold = touchThreshold - getLtaFraction(m_releaseThreshold);
+  uint32_t reseedThreshold = m_lta - ((m_movingAverageReseedThreshold * m_lta) >> 8);
+  uint32_t proximityThreshold = m_lta + ((m_proximityThreshold * m_lta) >> 8);
+  uint32_t touchThreshold = proximityThreshold + ((m_touchThreshold * m_lta) >> 8);
+  uint32_t releaseThreshold = touchThreshold - ((m_releaseThreshold * m_lta) >> 8);
 
   if (m_state == IDLE) {
     if (sample > proximityThreshold) {
-      if (m_debounceStartTimeMs == 0) {
-        m_debounceStartTimeMs = millis();
+      if (m_delayStartTimeMs == 0) {
+        m_delayStartTimeMs = millis();
       }
-      else if (millis() - m_debounceStartTimeMs > m_debounceDelayMs) {
+      else if (millis() - m_delayStartTimeMs > m_delayMs) {
         m_state = PROXIMITY;
-        m_debounceStartTimeMs = 0;
+        m_delayStartTimeMs = 0;
         m_proximityStartTimeMs = millis();
       }
     }
     else if (sample < reseedThreshold) {
-      m_debounceStartTimeMs = 0;
+      m_delayStartTimeMs = 0;
       m_lta = sample;
     }
     else {
-      m_debounceStartTimeMs = 0;
-      updateLta(sample,m_ltaAdaptationRate);
+      m_delayStartTimeMs = 0;
+      updateLta(sample);
     }
   }
 
@@ -177,9 +216,9 @@ uint32_t TouchSensor::update(uint32_t sample) {
     else if (sample < proximityThreshold) {
       m_state = IDLE;
       m_idleStartTimeMs = millis();
-      updateLta(sample,m_ltaAdaptationRate);
+      updateLta(sample);
     }
-    else if (m_proximityTimeoutMs > 0 && millis() - m_proximityStartTimeMs > m_proximityTimeoutMs) {
+    else if ((m_proximityTimeoutMs > 0 && millis() - m_proximityStartTimeMs) > m_proximityTimeoutMs) {
       m_state = IDLE;
       m_idleStartTimeMs = millis();
       m_lta = sample;
@@ -195,7 +234,7 @@ uint32_t TouchSensor::update(uint32_t sample) {
       else {
         m_state = IDLE;
         m_idleStartTimeMs = millis();
-        updateLta(sample,m_ltaAdaptationRate);
+        updateLta(sample);
       }
     }
     else if (m_touchTimeoutMs > 0 && millis() - m_touchStartTimeMs > m_touchTimeoutMs) {
@@ -204,6 +243,23 @@ uint32_t TouchSensor::update(uint32_t sample) {
       m_lta = sample;
     }
   }
+
   return sample;
 }
+
+uint16_t ProxmitySensor::getAdcSample() {
+
+  // Start conversion
+  ADCSRA |= (1<<ADSC);
+
+  // Wait for conversion to finish
+  while(!(ADCSRA & _BV(ADIF)));
+
+  // Reset the conversion complete flag
+  ADCSRA |= (1<<ADIF);
+
+  //return (ADCH << 8) | ADCL;
+  return ADC;
+}
+
 

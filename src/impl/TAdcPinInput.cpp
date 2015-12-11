@@ -5,7 +5,9 @@
  *      Author: gbumgard
  */
 
-#include "TAdcPinInput.h"
+#include <TAdcPinInput.h>
+
+#include <stdint.h>
 
 volatile uint8_t& PortB::PORT = PORTB;
 volatile uint8_t& PortB::PIN = PINB;
