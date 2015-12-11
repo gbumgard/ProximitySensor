@@ -1,1 +1,1 @@
-# AVR/Arduino Touch and Proximity Sensing Library
+# AVR/Arduino Proximity Sensing Library
