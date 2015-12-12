@@ -155,7 +155,7 @@ uint32_t ProximitySensor::update() {
     if (m_onSampleCallback) (*m_onSampleCallback)(m_onSampleCallbackData);
   }
 
-  return update((total / sampleCount) << 10);
+  return update((total / sampleCount) << 8) >> 8;
 }
 
 uint32_t ProximitySensor::updateMovingAverage(uint32_t sample) {

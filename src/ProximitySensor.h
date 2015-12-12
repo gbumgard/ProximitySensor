@@ -261,7 +261,7 @@ public:
    * the internal IIR filter.
    */
   uint32_t getMovingAverage() const {
-    return m_movingAverage;
+    return m_movingAverage >> 8;
   }
 
   /**
