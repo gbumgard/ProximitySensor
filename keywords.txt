@@ -1,0 +1,49 @@
+#######################################
+# Syntax Coloring Map For Ethernet
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+ProximitySensor		KEYWORD1	ProximitySensor	
+TAdcPinInput		KEYWORD1	TAdcPinInput	
+OnSampleCallback	KEYWORD1	OnSampleCallback
+
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+setResolution		KEYWORD2
+getResolution		KEYWORD2
+setFilterAdaptationRate	KEYWORD2
+getFilterAdaptationRate	KEYWORD2
+setFilterReseedThreshold	KEYWORD2
+getFilterReseedThreshold	KEYWORD2
+setProximityThreshold	KEYWORD2
+getProximityThreshold	KEYWORD2
+setTouchThreshold	KEYWORD2
+getTouchThreshold	KEYWORD2
+setReleaseThreshold	KEYWORD2
+getReleaseThreshold	KEYWORD2
+setDelayMs		KEYWORD2
+getDelayMs		KEYWORD2
+getDelayStartTimeMs	KEYWORD2
+setProximityTimeoutMs	KEYWORD2
+getProximityTimeoutMs	KEYWORD2
+setTouchTimeoutMs	KEYWORD2
+getTouchTimeoutMs	KEYWORD2
+getMovingAverage	KEYWORD2
+getState		KEYWORD2
+inProximity		KEYWORD2
+inTouch			KEYWORD2
+getIdleDurationMs	KEYWORD2
+getProximityDurationMs	KEYWORD2
+getTouchDurationMs	KEYWORD2
+reseed			KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
